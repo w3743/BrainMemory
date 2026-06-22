@@ -1,4 +1,4 @@
-# CSM — 连续强度记忆 (Continuous Strength Memory)
+# CSM — LLM Agent 记忆引擎
 
 <p align="center">
   <em>为 pi coding agent 设计的持久化记忆子系统</em>

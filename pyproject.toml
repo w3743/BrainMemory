@@ -1,7 +1,7 @@
 [project]
 name = "csm-agent"
 version = "1.0.0"
-description = "Continuous Strength Memory — emergent intelligence from simple algorithms. A long-term memory subsystem for LLM agents with SQLite persistence, semantic retrieval, and LLM-driven memory arbitration."
+description = "CSM — LLM Agent 记忆引擎。为 pi coding agent 设计的持久化记忆子系统，SQLite 持久化，语义检索，DeepSeek LLM 自动记忆提取。"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
