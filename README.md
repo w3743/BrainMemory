@@ -1,7 +1,7 @@
-# CSM — LLM Agent 记忆引擎
+# 类脑记忆 — LLM Agent 记忆引擎
 
 <p align="center">
-  <em>为 pi coding agent 设计的持久化记忆子系统</em>
+  <em>为 pi coding agent 设计的类脑持久化记忆子系统</em>
 </p>
 
 ---
