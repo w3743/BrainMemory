@@ -630,12 +630,56 @@ refreshAll().catch(e=>alert(e.message));
 
 
 def run_server(db_path: str | Path, host: str = "127.0.0.1", port: int = 8765, api_key: str | None = None) -> None:
-    print("MemBrain initializing (loading embedding model, this may take a while on first run)...", flush=True)
-    handler_cls, cleanup = create_handler(db_path, api_key=api_key)
-    server = HTTPServer((host, port), handler_cls)
-    print(f"MemBrain ready, listening on http://{host}:{port}", flush=True)
+    """Start the MemBrain HTTP sidecar with a visual startup animation."""
+    import sys
+    import threading
+
+    # ── Suppress noisy third-party output during startup ────────────
+    import logging
+    logging.getLogger("transformers").setLevel(logging.ERROR)
+    logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
+    logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+
+    # ── Animated spinner ────────────────────────────────────────────
+    frames = ["━", "\\", "┃", "/"]
+    stop = threading.Event()
+
+    def _spin() -> None:
+        i = 0
+        while not stop.is_set():
+            sys.stdout.write(f"\r  {frames[i % 4]} 正在加载模型...")
+            sys.stdout.flush()
+            stop.wait(0.15)
+            i += 1
+
+    spinner = threading.Thread(target=_spin, daemon=True)
+    handler_cls = None
+    cleanup_fn = None
+    server = None
+
     try:
+        sys.stdout.write("\r  ━ 正在加载模型...")
+        sys.stdout.flush()
+        spinner.start()
+
+        handler_cls, cleanup_fn = create_handler(db_path, api_key=api_key)
+        stop.set()
+        spinner.join(timeout=0.5)
+
+        server = HTTPServer((host, port), handler_cls)
+        sys.stdout.write(f"\r  ✔ MemBrain 启动成功  →  http://{host}:{port}/admin\n")
+        sys.stdout.flush()
         server.serve_forever()
+    except Exception:
+        stop.set()
+        spinner.join(timeout=0.5)
+        sys.stdout.write("\r  ✖ 启动失败\n")
+        sys.stdout.flush()
+        raise
     finally:
-        cleanup()
-        server.server_close()
+        if cleanup_fn is not None:
+            cleanup_fn()
+        if server is not None:
+            server.server_close()
