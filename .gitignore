@@ -14,6 +14,8 @@ __pycache__/
 .tmp/
 .csm_eval/
 .csm_eval_full/
+build/
+dist/
 models/
 *.safetensors
 *.bin

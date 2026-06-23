@@ -105,6 +105,8 @@ def test_deepseek_prompt_is_simplified() -> None:
     assert "durable information" in combined
     # 不应包含旧版的长篇操作规则
     assert "core_identity" not in combined
+    assert "SUPERSEDE creates a NEW memory" in combined
+    assert "SUPRESSEDE" not in combined
 
 
 def test_deepseek_probe_requires_explicit_call_path() -> None:

@@ -22,12 +22,51 @@ def test_piagent_hook_injects_and_commits_memory(tmp_path) -> None:
 
         assert "bun install" in state["membrain_memory_context"]
         assert state["membrain_memory_ids"]
+        assert state["csm_memory_context"] == state["membrain_memory_context"]
+        assert state["csm_memory_ids"] == state["membrain_memory_ids"]
 
-        state["csm_explicit_memories"] = ["用户希望回答先给结论，再给必要步骤。"]
+        state["membrain_explicit_memories"] = ["用户希望回答先给结论，再给必要步骤。"]
         final_state = hook.agent_end("安装依赖用什么命令？", "使用 bun install。", state)
-        assert "UPDATE" in final_state["csm_write_plan"]
-        assert "ADD" in final_state["csm_write_plan"]
-        assert final_state["csm_committed_ids"]
+        assert "UPDATE" in final_state["membrain_write_plan"]
+        assert "ADD" in final_state["membrain_write_plan"]
+        assert final_state["membrain_committed_ids"]
+        assert final_state["csm_write_plan"] == final_state["membrain_write_plan"]
+        assert final_state["csm_committed_ids"] == final_state["membrain_committed_ids"]
+    finally:
+        engine.close()
+
+
+def test_piagent_hook_accepts_workspace_id_scope(tmp_path) -> None:
+    engine = CSMEngine(tmp_path / "mem.db")
+    try:
+        hook = PiAgentMemoryHook(CSMMemoryAdapter(engine, extractor=fake_add_extractor()))
+        state = hook.agent_end(
+            "这个工作区默认使用 pytest 跑测试。",
+            "好的。",
+            {"user_id": "u1", "workspace_id": "workspace-demo"},
+        )
+        assert "ADD" in state["membrain_write_plan"]
+        results = engine.search("这个工作区默认怎么跑测试？", project_id="workspace-demo")
+        assert results
+        assert "pytest" in results[0].memory.content
+    finally:
+        engine.close()
+
+
+def test_piagent_hook_accepts_legacy_csm_memory_ids(tmp_path) -> None:
+    engine = CSMEngine(tmp_path / "mem.db")
+    try:
+        memory = engine.add_memory("项目依赖管理使用 bun install。", project_id="demo", tags="依赖,bun")
+        hook = PiAgentMemoryHook(CSMMemoryAdapter(engine, extractor=JSONMemoryExtractor(lambda payload: {"rationale": "noop", "writes": [{"op": "NOOP"}]})))
+        state = hook.agent_end(
+            "安装依赖用什么命令？",
+            "使用 bun install。",
+            {"user_id": "u1", "project_id": "demo", "csm_memory_ids": [memory.id]},
+        )
+        updated = engine.store.get(memory.id or 0)
+        assert "UPDATE" in state["membrain_write_plan"]
+        assert updated is not None
+        assert updated.access_count >= 1
     finally:
         engine.close()
 
@@ -137,6 +176,83 @@ def test_openclaw_same_workspace_different_users_share_project_memory(tmp_path) 
         })
 
         assert "bun install" in other["memory_context"]
+        assert other["memory_ids"]
+    finally:
+        engine.close()
+
+
+def test_no_workspace_personal_memory_is_user_scoped(tmp_path) -> None:
+    engine = CSMEngine(tmp_path / "mem.db")
+    try:
+        sidecar = OpenClawMemorySidecar(CSMMemoryAdapter(engine, extractor=fake_add_extractor()))
+        sidecar.handle_post_run({
+            "user_id": "u1",
+            "message": "我叫王家裕。",
+        })
+        stored = engine.store.list_all()[0]
+        assert stored.project_id == "user:u1"
+
+        own = sidecar.handle_pre_prompt({
+            "user_id": "u1",
+            "message": "以后应该怎么称呼我？",
+        })
+        other = sidecar.handle_pre_prompt({
+            "user_id": "u2",
+            "message": "以后应该怎么称呼我？",
+        })
+
+        assert "王家裕" in own["memory_context"]
+        assert other["memory_context"] == ""
+        assert other["memory_ids"] == []
+    finally:
+        engine.close()
+
+
+def test_no_workspace_project_like_memory_is_not_global(tmp_path) -> None:
+    engine = CSMEngine(tmp_path / "mem.db")
+    try:
+        sidecar = OpenClawMemorySidecar(CSMMemoryAdapter(engine, extractor=fake_add_extractor()))
+        sidecar.handle_post_run({
+            "user_id": "u1",
+            "message": "这个项目依赖管理使用 bun install。",
+        })
+        stored = engine.store.list_all()[0]
+        assert stored.project_id == "user:u1"
+
+        own = sidecar.handle_pre_prompt({
+            "user_id": "u1",
+            "message": "安装依赖用什么命令？",
+        })
+        other = sidecar.handle_pre_prompt({
+            "user_id": "u2",
+            "message": "安装依赖用什么命令？",
+        })
+
+        assert "bun install" in own["memory_context"]
+        assert other["memory_context"] == ""
+        assert other["memory_ids"] == []
+    finally:
+        engine.close()
+
+
+def test_no_workspace_environment_fact_is_global(tmp_path) -> None:
+    engine = CSMEngine(tmp_path / "mem.db")
+    try:
+        sidecar = OpenClawMemorySidecar(CSMMemoryAdapter(engine, extractor=fake_add_extractor()))
+        sidecar.handle_post_run({
+            "user_id": "u1",
+            "message": "本机默认 Python 命令是 py -3.11。",
+        })
+        stored = engine.store.list_all()[0]
+        assert stored.project_id is None
+
+        other = sidecar.handle_pre_prompt({
+            "user_id": "u2",
+            "workspace_id": "another-workspace",
+            "message": "本机默认 Python 命令是什么？",
+        })
+
+        assert "py -3.11" in other["memory_context"]
         assert other["memory_ids"]
     finally:
         engine.close()

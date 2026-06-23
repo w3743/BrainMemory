@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -58,7 +59,7 @@ _SCHEMA_PROMPT = """Output format:
 Available operations: ADD, UPDATE, SUPERSEDE, ARCHIVE, DELETE, NOOP.
 - target_id is required for UPDATE, SUPERSEDE, ARCHIVE, and DELETE. It MUST be one of the "id" values from retrieved_memories. Do not invent IDs.
 - tags are free-form: use whatever labels feel natural (e.g. "preference, coding-style", "project, dependencies").
-- For ADD and SUPERSEDE, content is required and should be a self-contained memory (not a reply to the user). SUPRESSEDE creates a NEW memory and marks the old one as superseded.
+- For ADD and SUPERSEDE, content is required and should be a self-contained memory (not a reply to the user). SUPERSEDE creates a NEW memory and marks the old one as superseded.
 - If nothing in the conversation is worth remembering long-term, return a single NOOP."""
 
 
@@ -267,23 +268,34 @@ class DeepSeekMemoryExtractor:
         return json.dumps(compact, ensure_ascii=False, separators=(",", ":"))
 
     def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
-        request = urllib.request.Request(
-            f"{self.base_url}/chat/completions",
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"DeepSeek API HTTP {exc.code}: {body}") from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"DeepSeek API unreachable: {exc.reason}") from exc
+        last_exc = None
+        max_retries = 3
+        for attempt in range(max_retries):
+            request = urllib.request.Request(
+                f"{self.base_url}/chat/completions",
+                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                # HTTP 错误（401/429等）不重试
+                body = exc.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"DeepSeek API HTTP {exc.code}: {body}") from exc
+            except (urllib.error.URLError, OSError) as exc:
+                last_exc = exc
+                if attempt < max_retries - 1:
+                    wait = (attempt + 1) * 2.0
+                    time.sleep(wait)
+                    continue
+                raise RuntimeError(
+                    f"DeepSeek API unreachable after {max_retries} attempts: {getattr(exc, 'reason', exc)}"
+                ) from exc
 
 
 # ═══════════════════════════════════════════════════════════════════

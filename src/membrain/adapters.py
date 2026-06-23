@@ -76,10 +76,12 @@ class CSMMemoryAdapter:
 
     def retrieve(self, query: str, scope: AgentScope, budget_chars: int | None = None, limit: int = 8) -> MemoryContext:
         budget = budget_chars or self.default_budget_chars
-        results = filter_scoped_results(_merge_search_results(
+        groups = [
             self.engine.search(query, project_id=scope.personal_project_id, limit=limit, mode=RetrievalMode.ANSWER_INJECTION),
-            self.engine.search(query, project_id=scope.shared_project_id, limit=limit, mode=RetrievalMode.ANSWER_INJECTION),
-        ), scope)[:limit]
+        ]
+        if scope.shared_project_id is not None:
+            groups.append(self.engine.search(query, project_id=scope.shared_project_id, limit=limit, mode=RetrievalMode.ANSWER_INJECTION))
+        results = filter_scoped_results(_merge_search_results(*groups), scope)[:limit]
         lines: list[str] = []
         ids: list[int] = []
         items: list[dict[str, Any]] = []
@@ -131,13 +133,14 @@ class CSMMemoryAdapter:
             if clean:
                 writes.append(MemoryWrite(op=MemoryOp.ADD, content=clean))
 
-        arbitration_results = filter_scoped_results(
-            _merge_search_results(
-                self.engine.search(event.user_input, project_id=event.scope.personal_project_id, limit=5, mode=RetrievalMode.WRITE_ARBITRATION),
-                self.engine.search(event.user_input, project_id=event.scope.shared_project_id, limit=5, mode=RetrievalMode.WRITE_ARBITRATION),
-            ),
-            event.scope,
-        )[:5]
+        arbitration_groups = [
+            self.engine.search(event.user_input, project_id=event.scope.personal_project_id, limit=5, mode=RetrievalMode.WRITE_ARBITRATION),
+        ]
+        if event.scope.shared_project_id is not None:
+            arbitration_groups.append(
+                self.engine.search(event.user_input, project_id=event.scope.shared_project_id, limit=5, mode=RetrievalMode.WRITE_ARBITRATION)
+            )
+        arbitration_results = filter_scoped_results(_merge_search_results(*arbitration_groups), event.scope)[:5]
         retrieved = _retrieved_for_arbitration(arbitration_results)
         extracted = self.extractor.extract(
             user_input=event.user_input,
@@ -198,6 +201,8 @@ class PiAgentMemoryHook:
         state = dict(state)
         state["membrain_memory_context"] = context.text
         state["membrain_memory_ids"] = context.memory_ids
+        state["csm_memory_context"] = context.text
+        state["csm_memory_ids"] = context.memory_ids
         return state
 
     def agent_end(self, user_input: str, agent_output: str, state: dict[str, Any]) -> dict[str, Any]:
@@ -205,15 +210,19 @@ class PiAgentMemoryHook:
         event = AgentEvent(
             user_input=user_input,
             agent_output=agent_output,
-            used_memory_ids=list(state.get("membrain_memory_ids", [])),
-            explicit_memories=list(state.get("csm_explicit_memories", [])),
+            used_memory_ids=list(state.get("membrain_memory_ids", state.get("csm_memory_ids", []))),
+            explicit_memories=list(state.get("membrain_explicit_memories", state.get("csm_explicit_memories", []))),
             scope=scope,
         )
         plan = self.adapter.observe(event)
         committed = self.adapter.commit(plan, scope)
         state = dict(state)
-        state["csm_write_plan"] = [w.op.value for w in plan.writes]
-        state["csm_committed_ids"] = [m.id for m in committed]
+        write_plan = [w.op.value for w in plan.writes]
+        committed_ids = [m.id for m in committed]
+        state["membrain_write_plan"] = write_plan
+        state["membrain_committed_ids"] = committed_ids
+        state["csm_write_plan"] = write_plan
+        state["csm_committed_ids"] = committed_ids
         return state
 
 
@@ -262,7 +271,7 @@ class HermesMemoryProvider:
 def _scope_from_state(state: dict[str, Any]) -> AgentScope:
     return AgentScope(
         user_id=str(state.get("user_id", "default")),
-        project_id=state.get("project_id"),
+        project_id=state.get("project_id") or state.get("workspace_id"),
         channel=state.get("channel"),
         session_id=state.get("session_id"),
         metadata=dict(state.get("metadata", {})),
@@ -312,22 +321,24 @@ def _project_id_for_write(write: MemoryWrite, scope: AgentScope) -> str | None:
 
 def _looks_like_project_memory(content: str, tags: str = "") -> bool:
     text = f"{content} {tags}".lower()
-    project_terms = [
+    strong_project_terms = [
         "项目", "workspace", "工作区", "仓库", "依赖", "部署", "数据库", "缓存",
         "docker", "compose", "bun", "pnpm", "npm", "yarn", "pytest", "fastapi",
-        "react", "typescript", "sqlite", "postgresql", "redis", "命令", "流程",
-        "团队", "代码", "规范", "约定", "代码风格",
+        "react", "typescript", "sqlite", "postgresql", "redis",
         "project", "repo", "repository", "codebase", "team", "dependency", "deploy",
-        "database", "cache", "command", "workflow", "convention", "coding style",
+        "database", "cache",
+    ]
+    anchored_project_terms = [
+        "命令", "流程", "团队", "代码", "规范", "约定", "代码风格",
+        "command", "workflow", "convention", "coding style",
+        "偏好", "喜欢", "风格", "回答",
+        "preference", "prefer", "prefers", "style", "answer", "answers",
     ]
     if _has_project_anchor(text):
-        return any(term in text for term in project_terms + [
-            "偏好", "喜欢", "风格", "回答",
-            "preference", "prefer", "prefers", "style", "answer", "answers",
-        ])
+        return any(term in text for term in strong_project_terms + anchored_project_terms)
     if _looks_like_personal_memory(content, tags):
         return False
-    return any(term in text for term in project_terms)
+    return any(term in text for term in strong_project_terms)
 
 
 def _looks_like_personal_memory(content: str, tags: str = "") -> bool:
@@ -415,6 +426,10 @@ def filter_scoped_results(results: list[SearchResult], scope: AgentScope) -> lis
     filtered: list[SearchResult] = []
     for result in results:
         memory = result.memory
+        if memory.project_id and memory.project_id.startswith("user:") and memory.project_id != scope.personal_project_id:
+            continue
+        if memory.project_id and ":user:" in memory.project_id and memory.project_id != scope.personal_project_id:
+            continue
         if memory.project_id is None and _looks_like_personal_memory(memory.content, memory.tags):
             continue
         filtered.append(result)

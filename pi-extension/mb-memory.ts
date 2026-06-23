@@ -17,7 +17,7 @@
  * 环境变量：
  *   CSM_PROJECT_DIR     CSM 项目根目录（默认：本文件所在目录的上级）
  *   CSM_PORT            sidecar 端口（默认：19876）
- *   CSM_DB              数据库路径（默认：~/.pi/agent/membrain_memory.db）
+ *   CSM_DB              数据库路径（默认：~/.pi/agent/csm_memory.db）
  *   CSM_EMBEDDING_MODEL 本地 BGE 模型路径（默认：<项目>/models/bge-large-zh-v1.5）
  */
 
@@ -64,7 +64,7 @@ const CSM_EMBEDDING_MODEL =
   (CSM_IS_PIP_INSTALLED ? "" : join(CSM_PROJECT_DIR, "models", "bge-large-zh-v1.5"));
 const CSM_DB_PATH =
   process.env.CSM_DB ||
-  join(homedir(), ".pi", "agent", "membrain_memory.db");
+  join(homedir(), ".pi", "agent", "csm_memory.db");
 
 // 启动 sidecar 的最大等待时间（毫秒）
 const STARTUP_TIMEOUT_MS = 15_000;
@@ -288,7 +288,7 @@ export default async function (pi: ExtensionAPI) {
     console.log(
       "[mb-memory] membrain Python package not found.\n" +
       "  Install it first: pip install membrain\n" +
-      "  Or for full features: pip install 'membrain[local-embedding]'\n" +
+      "  Local bge-large-zh-v1.5 embeddings are required at runtime.\n" +
       "  Memory features disabled this session."
     );
     return;

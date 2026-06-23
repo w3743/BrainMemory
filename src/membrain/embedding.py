@@ -14,8 +14,9 @@ from typing import Protocol
 
 TOKEN_RE = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
-DEFAULT_LOCAL_MODEL = "BAAI/bge-large-zh-v1.5"
+DEFAULT_LOCAL_MODEL_NAME = "BAAI/bge-large-zh-v1.5"
 PROJECT_LOCAL_MODEL = Path(__file__).resolve().parents[2] / "models" / "bge-large-zh-v1.5"
+DEFAULT_LOCAL_MODEL = str(PROJECT_LOCAL_MODEL)
 
 
 class EmbeddingBackend(Protocol):
@@ -42,8 +43,8 @@ def tokenize(text: str) -> list[str]:
 class LocalSentenceTransformerEmbeddingBackend:
     """本地 sentence-transformers 嵌入 — 推荐方案。
 
-    使用 BAAI/bge-large-zh-v1.5（1024 维），中文语义理解能力强大。
-    模型首次加载时自动下载（约 1.3GB），之后缓存于本地。
+    使用本地 bge-large-zh-v1.5（1024 维），中文语义理解能力强大。
+    模型目录必须已经存在；缺少模型时直接报错，避免静默下载或降级。
     """
 
     name = "local_bge_large_zh"
@@ -73,19 +74,19 @@ def build_embedding_backend_from_env() -> EmbeddingBackend:
     backend_env = os.environ.get("CSM_EMBEDDING_BACKEND", "").strip().lower()
 
     if backend_env in {"", "local", "sentence-transformers", "sentence_transformers"}:
-        model_name = os.environ.get("CSM_EMBEDDING_MODEL") or _default_model_path()
-        return LocalSentenceTransformerEmbeddingBackend(str(model_name))
+        model_path = _resolve_local_model_path(os.environ.get("CSM_EMBEDDING_MODEL"))
+        return LocalSentenceTransformerEmbeddingBackend(str(model_path))
 
     raise ValueError(f"unsupported CSM_EMBEDDING_BACKEND: {backend_env}")
 
 
 def embedding_config_from_env() -> dict[str, str | int | None]:
     backend_env = os.environ.get("CSM_EMBEDDING_BACKEND", "").strip().lower() or "local"
-    model = os.environ.get("CSM_EMBEDDING_MODEL") or str(_default_model_path())
+    model = str(_resolve_local_model_path(os.environ.get("CSM_EMBEDDING_MODEL")))
     return {
         "backend": backend_env,
         "model": model,
-        "default_local_model": DEFAULT_LOCAL_MODEL,
+        "default_local_model": DEFAULT_LOCAL_MODEL_NAME,
         "available": _detect_available_backends(),
     }
 
@@ -98,10 +99,16 @@ def _detect_available_backends() -> list[str]:
         return []
 
 
-def _default_model_path() -> str:
-    if PROJECT_LOCAL_MODEL.exists():
-        return str(PROJECT_LOCAL_MODEL)
-    return DEFAULT_LOCAL_MODEL
+def _resolve_local_model_path(value: str | None = None) -> Path:
+    model_path = Path(value).expanduser() if value else PROJECT_LOCAL_MODEL
+    if not model_path.exists():
+        raise FileNotFoundError(
+            f"Local bge-large-zh-v1.5 model directory not found: {model_path}. "
+            "Set CSM_EMBEDDING_MODEL to an existing local model path."
+        )
+    if not model_path.is_dir():
+        raise NotADirectoryError(f"CSM_EMBEDDING_MODEL must be a local directory: {model_path}")
+    return model_path
 
 
 def cosine(a: list[float], b: list[float]) -> float:

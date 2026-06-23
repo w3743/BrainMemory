@@ -294,3 +294,45 @@ def test_admin_console_and_core_admin_apis(tmp_path) -> None:
         assert reindex["reindexed"] >= 1
     finally:
         server.stop()
+
+
+def test_admin_user_scoped_lookup_without_project_does_not_scan_all_private_memory(tmp_path) -> None:
+    server = SidecarTestServer(tmp_path / "sidecar.db")
+    server.start()
+    try:
+        status, private = server.post("/admin/memory/save", {
+            "content": "我叫王家裕。",
+            "user_id": "u1",
+            "tags": "名字,身份,称呼",
+        })
+        assert status == 200
+        assert private["memory"]["project_id"] == "user:u1"
+
+        status, own = server.post("/admin/retrieval/test", {
+            "query": "以后应该怎么称呼我？",
+            "user_id": "u1",
+            "mode": "answer_injection",
+            "limit": 5,
+        })
+        assert status == 200
+        assert any(item["memory"]["id"] == private["memory"]["id"] for item in own["items"])
+
+        status, other = server.post("/admin/retrieval/test", {
+            "query": "以后应该怎么称呼我？",
+            "user_id": "u2",
+            "mode": "answer_injection",
+            "limit": 5,
+        })
+        assert status == 200
+        assert all(item["memory"]["id"] != private["memory"]["id"] for item in other["items"])
+
+        status, arb_other = server.post("/admin/arbitration/dry-run", {
+            "user_input": "以后应该怎么称呼我？",
+            "user_id": "u2",
+            "agent_output": "",
+            "limit": 5,
+        })
+        assert status == 200
+        assert all(item["id"] != private["memory"]["id"] for item in arb_other["retrieved_memories"])
+    finally:
+        server.stop()

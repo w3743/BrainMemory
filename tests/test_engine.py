@@ -1,7 +1,10 @@
 import os
+from pathlib import Path
+
+import pytest
 
 from membrain.engine import CSMEngine
-from membrain.embedding import embedding_config_from_env
+from membrain.embedding import build_embedding_backend_from_env, embedding_config_from_env
 from membrain.models import MemoryOp, MemoryStatus
 
 
@@ -225,9 +228,29 @@ def test_embedding_config_defaults_to_local_bge() -> None:
         config = embedding_config_from_env()
         assert config["backend"] == "local"
         assert "bge-large-zh-v1.5" in str(config["model"])
+        assert Path(str(config["model"])).exists()
         assert "hash" not in config["available"]
     finally:
         if old_backend is not None:
             os.environ["CSM_EMBEDDING_BACKEND"] = old_backend
         if old_model is not None:
+            os.environ["CSM_EMBEDDING_MODEL"] = old_model
+
+
+def test_embedding_backend_rejects_remote_model_id() -> None:
+    old_backend = os.environ.get("CSM_EMBEDDING_BACKEND")
+    old_model = os.environ.get("CSM_EMBEDDING_MODEL")
+    os.environ["CSM_EMBEDDING_BACKEND"] = "local"
+    os.environ["CSM_EMBEDDING_MODEL"] = "BAAI/bge-large-zh-v1.5"
+    try:
+        with pytest.raises(FileNotFoundError):
+            build_embedding_backend_from_env()
+    finally:
+        if old_backend is None:
+            os.environ.pop("CSM_EMBEDDING_BACKEND", None)
+        else:
+            os.environ["CSM_EMBEDDING_BACKEND"] = old_backend
+        if old_model is None:
+            os.environ.pop("CSM_EMBEDDING_MODEL", None)
+        else:
             os.environ["CSM_EMBEDDING_MODEL"] = old_model

@@ -7,11 +7,14 @@ from test_engine import (
     test_add_search_and_reinforce,
     test_duplicate_add_reinforces_existing_memory,
     test_duplicate_add_keeps_higher_sensitivity,
+    test_embedding_backend_rejects_remote_model_id,
     test_embedding_config_defaults_to_local_bge,
     test_identity_question_recalls_name_memory,
+    test_irrelevant_query_returns_no_answer_injection_results,
     test_nearby_but_conflicting_add_does_not_merge,
     test_reinforce_used_records_experience_activation,
     test_reindex_embeddings_rebuilds_vectors_and_bumps_version,
+    test_search_does_not_reinforce_memory_until_used,
     test_sleep_archives_low_value_cold_memory,
     test_store_index_version_changes_on_memory_updates,
     test_supersede_hides_old_memory,
@@ -28,6 +31,11 @@ from test_adapters import (
     test_english_project_preference_is_shared_but_user_preference_is_private,
     test_hermes_provider_facade,
     test_negative_memory_injection_uses_positive_actionable_text,
+    test_no_workspace_environment_fact_is_global,
+    test_no_workspace_personal_memory_is_user_scoped,
+    test_no_workspace_project_like_memory_is_not_global,
+    test_piagent_hook_accepts_legacy_csm_memory_ids,
+    test_piagent_hook_accepts_workspace_id_scope,
     test_openclaw_irrelevant_message_does_not_inject_memory,
     test_openclaw_same_workspace_different_users_do_not_share_personal_memory,
     test_openclaw_same_workspace_different_users_share_project_memory,
@@ -75,10 +83,16 @@ from test_evolution import (
     test_supersede_inherits_trust,
 )
 from test_server import (
+    test_admin_user_scoped_lookup_without_project_does_not_scan_all_private_memory,
     test_admin_console_and_core_admin_apis,
     test_sidecar_api_key_auth,
     test_sidecar_health_and_openclaw_flow,
     test_sidecar_hermes_provider_endpoints,
+)
+from test_packaging import (
+    test_built_wheel_metadata_requires_sentence_transformers,
+    test_docs_do_not_advertise_embedding_fallback,
+    test_sentence_transformers_is_runtime_dependency,
 )
 
 
@@ -105,10 +119,19 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         test_identity_question_recalls_name_memory(Path(tmp))
     with tempfile.TemporaryDirectory() as tmp:
+        test_irrelevant_query_returns_no_answer_injection_results(Path(tmp))
+    with tempfile.TemporaryDirectory() as tmp:
+        test_search_does_not_reinforce_memory_until_used(Path(tmp))
+    with tempfile.TemporaryDirectory() as tmp:
         test_reinforce_used_records_experience_activation(Path(tmp))
     test_embedding_config_defaults_to_local_bge()
+    test_embedding_backend_rejects_remote_model_id()
     with tempfile.TemporaryDirectory() as tmp:
         test_piagent_hook_injects_and_commits_memory(Path(tmp))
+    with tempfile.TemporaryDirectory() as tmp:
+        test_piagent_hook_accepts_workspace_id_scope(Path(tmp))
+    with tempfile.TemporaryDirectory() as tmp:
+        test_piagent_hook_accepts_legacy_csm_memory_ids(Path(tmp))
     with tempfile.TemporaryDirectory() as tmp:
         test_openclaw_sidecar_payload_flow(Path(tmp))
     with tempfile.TemporaryDirectory() as tmp:
@@ -119,6 +142,12 @@ def main() -> None:
         test_openclaw_same_workspace_different_users_do_not_share_personal_memory(Path(tmp))
     with tempfile.TemporaryDirectory() as tmp:
         test_openclaw_same_workspace_different_users_share_project_memory(Path(tmp))
+    with tempfile.TemporaryDirectory() as tmp:
+        test_no_workspace_personal_memory_is_user_scoped(Path(tmp))
+    with tempfile.TemporaryDirectory() as tmp:
+        test_no_workspace_project_like_memory_is_not_global(Path(tmp))
+    with tempfile.TemporaryDirectory() as tmp:
+        test_no_workspace_environment_fact_is_global(Path(tmp))
     with tempfile.TemporaryDirectory() as tmp:
         test_project_preference_is_shared_but_personal_preference_is_private(Path(tmp))
     with tempfile.TemporaryDirectory() as tmp:
@@ -178,6 +207,11 @@ def main() -> None:
         test_sidecar_api_key_auth(Path(tmp))
     with tempfile.TemporaryDirectory() as tmp:
         test_admin_console_and_core_admin_apis(Path(tmp))
+    with tempfile.TemporaryDirectory() as tmp:
+        test_admin_user_scoped_lookup_without_project_does_not_scan_all_private_memory(Path(tmp))
+    test_sentence_transformers_is_runtime_dependency()
+    test_built_wheel_metadata_requires_sentence_transformers()
+    test_docs_do_not_advertise_embedding_fallback()
     # ── 自适应进化 ──
     test_apply_feedback_used()
     test_apply_feedback_ignored()
@@ -191,7 +225,7 @@ def main() -> None:
         test_evolution_engine_flow(Path(tmp))
     with tempfile.TemporaryDirectory() as tmp:
         test_supersede_inherits_trust(Path(tmp))
-    print("67 checks passed")
+    print("79 checks passed")
 
 
 if __name__ == "__main__":

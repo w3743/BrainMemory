@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "类脑记忆 — LLM Agent 记忆引擎。为 pi coding agent 设计的持久化记忆子系统，SQLite 持久化，语义检索，DeepSeek LLM 自动记忆提取。"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["sentence-transformers>=3.0.0"]
 authors = [{ name = "CSM Agent Project" }]
 license = "GPL-3.0-only"
 keywords = ["llm", "agent", "memory", "retrieval", "sqlite", "deepseek"]
@@ -18,9 +18,6 @@ classifiers = [
 
 [project.scripts]
 membrain = "membrain.cli:main"
-
-[project.optional-dependencies]
-local-embedding = ["sentence-transformers>=3.0.0"]
 
 [build-system]
 requires = ["setuptools>=68"]

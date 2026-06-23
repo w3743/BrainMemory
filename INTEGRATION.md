@@ -222,8 +222,7 @@ $env:CSM_DEEPSEEK_API_KEY = "sk-your-key"
 ### 本地语义向量
 
 ```powershell
-# 安装依赖
-pip install sentence-transformers
+# 安装项目依赖时会安装 sentence-transformers；这里主要显式指定本地模型。
 
 # 设置环境变量。pi 扩展和管理台脚本会自动设置；手动运行 CLI 时可显式设置。
 $env:CSM_EMBEDDING_BACKEND = "local"
@@ -244,11 +243,11 @@ C:\Users\wangj\Desktop\1\
 ├── pi-extension/
 │   └── mb-memory.ts          ★ 新增：pi 扩展（约 350 行 TypeScript）
 ├── INTEGRATION.md              ★ 新增：本集成文档
-├── src/membrain/              (未修改)
-│   ├── server.py               (未修改)
-│   ├── engine.py               (未修改)
-│   ├── adapters.py             (未修改)
-│   └── ...                     (均未修改)
+├── src/membrain/              ★ 核心记忆引擎（已接入本地 BGE、分区与兼容字段）
+│   ├── server.py
+│   ├── engine.py
+│   ├── adapters.py
+│   └── ...
 ```
 
 ---
@@ -347,7 +346,7 @@ pi -e C:\Users\wangj\Desktop\1\pi-extension\mb-memory.ts
 3. **会话级记忆隔离**：利用 CSM 的 `session_id` 字段追踪对话来源
 4. **记忆冲突检测**：当新旧记忆矛盾时，提醒用户确认
 5. **定期睡眠整理**：添加 pi 定时任务，自动归档过期记忆
-6. **向量后端升级**：启用 `sentence-transformers` 获得更好的语义检索
+6. **检索质量评测**：持续扩充召回排序用例，优化 MRR/NDCG，同时保持本地 BGE-only 运行约束
 
 ---
 
