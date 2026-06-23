@@ -16,7 +16,7 @@
  *
  * 环境变量：
  *   CSM_PROJECT_DIR     CSM 项目根目录（默认：本文件所在目录的上级）
- *   CSM_PORT            sidecar 端口（默认：19876）
+ *   CSM_PORT            sidecar 端口（默认：8765）
  *   CSM_DB              数据库路径（默认：~/.pi/agent/csm_memory.db）
  *   CSM_EMBEDDING_MODEL 本地 BGE 模型路径（默认：<项目>/models/bge-large-zh-v1.5）
  */
@@ -33,7 +33,7 @@ import { join, resolve } from "node:path";
 // ═══════════════════════════════════════════════════════════════════
 
 const CSM_HOST = "127.0.0.1";
-const CSM_PORT = parseInt(process.env.CSM_PORT || "19876", 10);
+const CSM_PORT = parseInt(process.env.CSM_PORT || "8765", 10);
 const CSM_BASE = `http://${CSM_HOST}:${CSM_PORT}`;
 /** 智能检测 CSM 项目根目录（仅开发模式使用） */
 const CSM_PROJECT_DIR = (() => {
