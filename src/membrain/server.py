@@ -19,7 +19,7 @@ from .extractor import DeepSeekMemoryExtractor, LLMExtractorNotConfigured, build
 from .llm_config import public_llm_config, save_llm_config
 from .models import MemoryOp, MemoryStatus, MemoryWrite, MemoryWritePlan
 from .retrieval import RetrievalMode
-from .strength import current_strength, resolve_layer
+from .strength import current_strength
 
 
 def create_handler(db_path: str | Path, api_key: str | None = None):
@@ -246,7 +246,7 @@ def _memory_payload(memory) -> dict[str, Any]:
     strength = current_strength(memory)
     return {
         "id": memory.id, "content": memory.content, "summary": memory.summary,
-        "strength": round(strength, 4), "layer": resolve_layer(strength),
+        "strength": round(strength, 4),
         "access_count": memory.access_count,
         "project_id": memory.project_id, "status": memory.status.value,
         "tags": memory.tags, "sensitivity": memory.sensitivity,
@@ -406,8 +406,8 @@ def admin_console_html(api_key: str | None = None) -> str:
           <div class="panel stat"><div class="label">常见标签</div><div class="value" id="stat-tags" style="font-size:14px">-</div></div>
         </div>
         <div class="grid two" style="margin-top:12px">
-          <div class="panel"><h2>强度层级（动态百分位）</h2><div id="layers" class="bars"></div></div>
-          <div class="panel"><h2>动态阈值</h2><div id="thresholds" class="bars"></div></div>
+          <div class="panel"><h2>强度统计</h2><div id="strength-stats" class="bars"></div></div>
+          <div class="panel"><h2>状态分布</h2><div id="status-bars" class="bars"></div></div>
         </div>
       </section>
       <section id="memories" class="view hidden">
@@ -434,7 +434,7 @@ def admin_console_html(api_key: str | None = None) -> str:
             <button class="action" onclick="loadMemories()">重新加载</button>
             <button class="action blue" onclick="reindexEmbeddings()">重建向量</button>
           </div>
-          <div style="overflow:auto"><table><thead><tr><th>ID</th><th>层级</th><th>强度</th><th>访问</th><th>状态</th><th>标签</th><th>内容</th><th>操作</th></tr></thead><tbody id="memory-rows"></tbody></table></div>
+          <div style="overflow:auto"><table><thead><tr><th>ID</th><th>强度</th><th>访问</th><th>状态</th><th>标签</th><th>内容</th><th>操作</th></tr></thead><tbody id="memory-rows"></tbody></table></div>
         </div>
       </section>
       <section id="llm" class="view hidden">
@@ -525,8 +525,8 @@ async function loadHealth(){
   document.getElementById("stat-embedding").textContent=(state.health.embedding||{}).backend||"-";
   const tags=state.health.common_tags||[];
   document.getElementById("stat-tags").textContent=tags.length?tags.slice(0,3).map(([t,c])=>`${t}(${c})`).join(", "):"-";
-  bars("layers",state.health.layers);
-  bars("thresholds",state.health.dynamic_thresholds||{});
+  bars("strength-stats",{avg:state.health.avg_strength||0,max:state.health.max_strength||0,min:state.health.min_strength||0});
+  bars("status-bars",state.health.statuses||{});
 }
 async function loadMemories(){state.memories=(await api("/admin/memories",{})).items||[];renderMemories();}
 async function loadLlmConfig(){
@@ -569,7 +569,7 @@ function renderMemories(){
   const q=document.getElementById("memory-filter").value.toLowerCase();
   const st=document.getElementById("memory-status").value;
   const rows=state.memories.filter(m=>{const hay=(m.content+" "+m.tags+" "+m.project_id).toLowerCase();return (!q||hay.includes(q))&&(!st||m.status===st);});
-  document.getElementById("memory-rows").innerHTML=rows.map(m=>`<tr><td>${m.id}</td><td>${m.layer}</td><td>${m.strength}</td><td>${m.access_count}</td><td>${statusPill(m.status)}</td><td>${esc(m.tags)}</td><td class="content-cell" title="${esc(m.content)}">${esc(m.content)}</td><td>
+  document.getElementById("memory-rows").innerHTML=rows.map(m=>`<tr><td>${m.id}</td><td>${m.strength}</td><td>${m.access_count}</td><td>${statusPill(m.status)}</td><td>${esc(m.tags)}</td><td class="content-cell" title="${esc(m.content)}">${esc(m.content)}</td><td>
     <button class="action" onclick="editMemory(${m.id})">编辑</button>
     <button class="action" onclick="memoryAction('/admin/memory/reinforce',${m.id})">强化</button>
     <button class="action" onclick="memoryAction('/admin/memory/archive',${m.id})">归档</button>

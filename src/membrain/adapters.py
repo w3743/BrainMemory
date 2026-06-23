@@ -14,7 +14,7 @@ from .extractor import MemoryExtractor, build_default_extractor
 from .embedding import tokenize
 from .models import Memory, MemoryOp, MemoryWrite, MemoryWritePlan
 from .retrieval import RetrievalMode, SearchResult
-from .strength import resolve_layer
+from .strength import current_strength
 
 
 @dataclass(slots=True)
@@ -93,16 +93,15 @@ class CSMMemoryAdapter:
                 continue
             if top_score > 0 and result.final_score < top_score * 0.75:
                 continue
-            layer = resolve_layer(result.current_strength)
             prompt_text = _prompt_memory_text(memory)
-            line = f"- [{layer} #{memory.id} score={result.final_score:.3f}] {prompt_text}"
+            line = f"- [#{memory.id} R={result.current_strength:.3f}] {prompt_text}"
             if used_chars + len(line) > budget:
                 break
             used_chars += len(line)
             lines.append(line)
             ids.append(memory.id)
             items.append({
-                "id": memory.id, "layer": layer,
+                "id": memory.id,
                 "score": round(result.final_score, 4),
                 "semantic_similarity": round(result.semantic_similarity, 4),
                 "keyword_score": round(result.keyword_score, 4),

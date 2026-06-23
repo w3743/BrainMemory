@@ -5,7 +5,7 @@ from .models import Memory, MemoryOp, MemoryStatus, MemoryWrite, MemoryWritePlan
 from .embedding import LocalSentenceTransformerEmbeddingBackend, build_embedding_backend_from_env
 from .retrieval import HybridRetriever, RetrievalMode, SearchResult
 from .store import MemoryStore
-from .strength import INITIAL_STRENGTH, DECAY_RATE, current_strength, reinforce, resolve_layer
+from .strength import INITIAL_STRENGTH, DECAY_RATE, current_strength, reinforce
 from .security import MemorySecurityPolicy, classify_sensitivity
 from .evolution import EvolutionEngine, apply_feedback, detect_feedback, inherit_from
 from .adapters import CSMMemoryAdapter, HermesMemoryProvider, OpenClawMemorySidecar, PiAgentMemoryHook
@@ -21,7 +21,7 @@ __all__ = [
     "Memory", "MemoryOp", "MemoryStatus", "MemoryWrite", "MemoryWritePlan",
     "LocalSentenceTransformerEmbeddingBackend", "build_embedding_backend_from_env",
     "HybridRetriever", "RetrievalMode", "SearchResult",
-    "INITIAL_STRENGTH", "DECAY_RATE", "current_strength", "reinforce", "resolve_layer",
+    "INITIAL_STRENGTH", "DECAY_RATE", "current_strength", "reinforce",
     "MemorySecurityPolicy", "classify_sensitivity",
     "EvolutionEngine", "apply_feedback", "detect_feedback", "inherit_from",
     "CSMMemoryAdapter", "HermesMemoryProvider", "OpenClawMemorySidecar", "PiAgentMemoryHook",

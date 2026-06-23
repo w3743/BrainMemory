@@ -19,7 +19,7 @@ from test_engine import (
     test_store_index_version_changes_on_memory_updates,
     test_supersede_hides_old_memory,
 )
-from test_strength import test_layer_thresholds, test_strength_decays_and_reinforces, test_unified_decay
+from test_strength import test_strength_decays_and_reinforces, test_unified_decay, test_adaptive_decay_weaker_faster, test_reinforce_gradual_approach, test_archive_threshold, test_constants
 from test_adapters import (
     test_adapter_observe_extracts_memory_without_explicit_list,
     test_adapter_duplicate_add_reinforces_instead_of_growing_store,
@@ -98,7 +98,10 @@ from test_packaging import (
 
 def main() -> None:
     test_strength_decays_and_reinforces()
-    test_layer_thresholds()
+    test_adaptive_decay_weaker_faster()
+    test_reinforce_gradual_approach()
+    test_archive_threshold()
+    test_constants()
     test_unified_decay()
     with tempfile.TemporaryDirectory() as tmp:
         test_add_search_and_reinforce(Path(tmp))

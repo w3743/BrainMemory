@@ -1,33 +1,31 @@
 """
-简化强度模型
+连续强度模型
 
 两个基本力：
-  - 时间衰减：R(t) = strength * exp(-decay_rate * elapsed_days)
-  - 访问强化：new_strength = R + gain（增量累加，不重置满分）
+  - 自适应衰减：有效衰减率 = decay_rate × (2.0 - R)，越弱忘越快
+  - 访问强化：new = R + 0.35 × (1 - R)，渐进逼近 1.0
 
-分层阈值（纯百分位，无上限保护）：
-  - L1: 前 20%
-  - L2: 20% ~ 60%
-  - L3: 60% ~ 90%
-  - COLD: 后 10%
+不再使用 L1/L2/L3 分层——直接用连续强度 R（0.0-1.0）表示记忆质量。
 """
 
 from __future__ import annotations
 
 import math
-import threading
 from datetime import datetime
 
 from .models import Memory, utc_now
 
-# 统一衰减率（所有记忆相同，重要性由访问频率涌现）
-DECAY_RATE: float = 0.02  # 每天衰减 2%
+# 基础衰减率
+DECAY_RATE: float = 0.02  # 每天基础衰减 2%
 
-# 每次被使用的强化增益（加到存储强度上，配合 FSRS 间隔效应）
+# 每次被使用的强化增益
 REINFORCEMENT_GAIN: float = 0.35
 
 # 默认初始强度
 INITIAL_STRENGTH: float = 0.6
+
+# 归档阈值：R 低于此值的记忆自动归档
+ARCHIVE_THRESHOLD: float = 0.01
 
 
 def elapsed_days(since: datetime | None, now: datetime | None = None) -> float:
@@ -41,16 +39,40 @@ def elapsed_days(since: datetime | None, now: datetime | None = None) -> float:
 
 
 def current_strength(memory: Memory, now: datetime | None = None) -> float:
-    """计算记忆当前的强度（衰减后）。使用记忆自身的 decay_rate。"""
+    """计算记忆当前的强度（自适应衰减后）。
+
+    有效衰减率 = decay_rate × (2.0 - R_at_time)
+    越弱的记忆忘得越快，形成"富者愈富"的正反馈。
+    """
     days = elapsed_days(memory.last_accessed_at or memory.updated_at or memory.created_at, now)
-    return max(0.0, min(1.0, memory.strength * math.exp(-memory.decay_rate * days)))
+    if days <= 0:
+        return memory.strength
+
+    # 自适应衰减：effective_d = decay_rate × (2 - R)
+    # R 高（接近 1.0）→ effective_d ≈ decay_rate（慢忘）
+    # R 低（接近 0.0）→ effective_d ≈ 2 × decay_rate（快忘）
+    s0 = memory.strength
+    d = memory.decay_rate
+    # 解微分方程 dR/dt = -d * (2-R) * R 的近似：分段数值积分
+    # 简化为：effective_d = d * (2 - average_R)
+    # 使用中点近似
+    # 精确解：R(t) = 2 / (1 + (2/s0 - 1) * exp(2*d*t))
+    # 推导：dR/dt = -d * (2-R) * R，分离变量 → 积分
+    if s0 >= 1.0:
+        return 1.0
+    if s0 <= 0.0:
+        return 0.0
+
+    coeff = (2.0 / s0) - 1.0
+    R = 2.0 / (1.0 + coeff * math.exp(2.0 * d * days))
+    return max(0.0, min(1.0, R))
 
 
 def reinforce(memory: Memory) -> float:
     """访问强化：从当前衰减强度 R 向 1.0 移动固定比例。
 
-    公式：new = R + REINFORCEMENT_GAIN * (1 - R)
-    每次访问将剩余距离 (1-R) 缩短 GAIN 比例，渐进逼近 1.0。
+    公式：new = R + REINFORCEMENT_GAIN × (1 - R)
+    每次访问将剩余距离缩短 35%，渐进逼近 1.0。
     同时减小 decay_rate，使频繁访问的记忆遗忘更慢。
     """
     R = current_strength(memory)
@@ -67,57 +89,3 @@ def reinforce(memory: Memory) -> float:
     memory.decay_rate = max(0.001, min(0.3, math.log(2) / new_S))
 
     return new_strength
-
-
-def compute_layer_thresholds(strengths: list[float]) -> dict[str, float]:
-    """从当前强度分布动态计算分层阈值（百分位法）。
-
-    样本不足时使用合理的固定阈值，确保新记忆不会被误判为 COLD。
-    """
-    if not strengths:
-        return {"L1": 0.7, "L2": 0.4, "L3": 0.15}
-
-    n = len(strengths)
-    if n < 5:
-        # 样本太少，百分位无意义，用固定阈值
-        return {"L1": 0.7, "L2": 0.4, "L3": 0.15}
-
-    sorted_s = sorted(strengths, reverse=True)
-
-    def percentile(pct: float) -> float:
-        idx = int(n * pct)
-        return sorted_s[min(idx, n - 1)]
-
-    l1 = percentile(0.20)
-    l2 = percentile(0.60)
-    l3 = percentile(0.90)
-    # L3 阈值上限保护：新记忆(0.6)至少是 L3
-    l3 = min(l3, 0.5)
-    return {"L1": l1, "L2": l2, "L3": l3}
-
-
-# 全局缓存的动态阈值（每次睡眠整理时更新）
-_dynamic_thresholds: dict[str, float] = {"L1": 0.8, "L2": 0.4, "L3": 0.1}
-_thresholds_lock = threading.Lock()
-
-
-def resolve_layer(strength: float) -> str:
-    """使用动态阈值解析记忆层级（线程安全）。"""
-    with _thresholds_lock:
-        L1, L2, L3 = _dynamic_thresholds["L1"], _dynamic_thresholds["L2"], _dynamic_thresholds["L3"]
-    if strength >= L1:
-        return "L1"
-    if strength >= L2:
-        return "L2"
-    if strength >= L3:
-        return "L3"
-    return "COLD"
-
-
-def update_dynamic_thresholds(strengths: list[float]) -> dict[str, float]:
-    """更新全局动态阈值（线程安全）。"""
-    global _dynamic_thresholds
-    new_thresholds = compute_layer_thresholds(strengths)
-    with _thresholds_lock:
-        _dynamic_thresholds = new_thresholds
-    return dict(new_thresholds)

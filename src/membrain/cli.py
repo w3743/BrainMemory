@@ -19,7 +19,7 @@ from .extractor import DeepSeekMemoryExtractor, LLMExtractorNotConfigured, build
 from .models import MemoryOp
 from .retrieval import RetrievalMode
 from .server import run_server
-from .strength import resolve_layer
+from .strength import current_strength
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -125,8 +125,7 @@ def run_demo(db_path: str) -> None:
         results = engine.search("安装依赖应该用什么命令？", project_id="csm")
         print("Demo search results:")
         for result in results:
-            layer = resolve_layer(result.current_strength)
-            print(f"- #{result.memory.id} {layer} score={result.final_score:.3f}: {result.memory.content}")
+            print(f"- #{result.memory.id} R={result.current_strength:.3f}: {result.memory.content}")
         print("\nHealth report:")
         print_json(engine.health_report())
     finally:
@@ -159,7 +158,7 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "search":
             print_json([{
                 "id": r.memory.id, "score": round(r.final_score, 4),
-                "layer": resolve_layer(r.current_strength),
+                "strength": round(r.current_strength, 4),
                 "strength": round(r.current_strength, 4),
                 "content": r.memory.content,
             } for r in engine.search(args.query, project_id=args.project, limit=args.limit)])

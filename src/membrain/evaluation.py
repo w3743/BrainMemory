@@ -184,7 +184,6 @@ def load_strength_cases(path: str | Path) -> list[StrengthCase]:
             days_elapsed=float(data["days_elapsed"]),
             access_count=int(data["access_count"]),
             expected_range=[float(x) for x in data["expected_range"]],
-            expected_layer=str(data.get("expected_layer", "")),
         )
     return _parse_jsonl(path, build)
 
@@ -436,7 +435,7 @@ def evaluate_end_to_end_fixture(work_dir: str | Path, fixture_path: str | Path) 
 # 4. 强度模型评测
 # ═══════════════════════════════════════════════════════════════════
 
-from .strength import current_strength, reinforce, resolve_layer, update_dynamic_thresholds, DECAY_RATE, REINFORCEMENT_GAIN
+from .strength import current_strength, reinforce, DECAY_RATE, REINFORCEMENT_GAIN
 
 
 def evaluate_strength_model(cases: list[StrengthCase]) -> StrengthEvalResult:
@@ -452,10 +451,6 @@ def evaluate_strength_model(cases: list[StrengthCase]) -> StrengthEvalResult:
     reinforce_ok = 0
     threshold_ok = 0
     passed = 0
-
-    # 构建一个标准分布用于阈值测试
-    distribution = [0.9, 0.85, 0.8, 0.7, 0.6, 0.5, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.08, 0.05, 0.03, 0.02, 0.01, 0.005]
-    update_dynamic_thresholds(distribution)
 
     for case in cases:
         now = utc_now()
@@ -492,19 +487,6 @@ def evaluate_strength_model(cases: list[StrengthCase]) -> StrengthEvalResult:
                     "id": case.id,
                     "reason": f"reinforce: expected [{lo:.4f}, {hi:.4f}], got {reinforced:.4f}",
                     "detail": f"pre-strength={cs:.4f} gain={REINFORCEMENT_GAIN}",
-                })
-
-        elif case.type == "threshold":
-            cs = current_strength(memory, now)
-            layer = resolve_layer(cs)
-            if layer == case.expected_layer:
-                threshold_ok += 1
-                passed += 1
-            else:
-                failures.append({
-                    "id": case.id,
-                    "reason": f"threshold: expected {case.expected_layer}, got {layer}",
-                    "detail": f"strength={cs:.4f}",
                 })
 
     return StrengthEvalResult(

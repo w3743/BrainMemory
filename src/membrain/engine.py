@@ -22,8 +22,7 @@ from .strength import (
     INITIAL_STRENGTH,
     current_strength,
     reinforce,
-    resolve_layer,
-    update_dynamic_thresholds,
+    ARCHIVE_THRESHOLD,
 )
 
 
@@ -183,52 +182,31 @@ class CSMEngine:
     # ── 睡眠整理 ──────────────────────────────────────────────
 
     def sleep_consolidate(self, archive_threshold: float | None = None) -> dict[str, object]:
-        """睡眠整理：R 绝对值归档 + 更新动态分层阈值。
-
-        FSRS 风格：每条记忆的归档由自身的可回忆概率（R）决定，
-        而非与其他记忆比较的百分位阈值。
-        默认 R < 0.01（1% 可回忆概率）时归档。
-        """
+        """Sleep consolidation: archive memories with R below threshold."""
         memories = self.store.list(include_archived=False)
         if not memories:
-            return {"total": 0, "archived": 0, "layers": {}}
+            return {"total": 0, "archived": 0}
 
-        # 更新动态阈值（仅用于层级统计/展示）
-        strengths = [current_strength(m) for m in memories]
-        thresholds = update_dynamic_thresholds(strengths)
-
-        # R 绝对值归档阈值
-        R_low = archive_threshold if archive_threshold is not None else 0.01
+        R_low = archive_threshold if archive_threshold is not None else ARCHIVE_THRESHOLD
         archived = 0
-        layer_counts: Counter[str] = Counter()
         for memory in memories:
             R = current_strength(memory)
-            layer = resolve_layer(R)
-            layer_counts[layer] += 1
             if memory.status == MemoryStatus.ACTIVE and R < R_low:
                 memory.status = MemoryStatus.ARCHIVED
-                memory.strength = R  # 同步衰减后的强度
-                memory.last_accessed_at = utc_now()  # 重置衰减时钟，防止二重衰减
+                memory.strength = R
+                memory.last_accessed_at = utc_now()
                 self.store.update(memory)
                 archived += 1
 
         return {
             "total": len(memories),
             "archived": archived,
-            "layers": dict(layer_counts),
-            "dynamic_thresholds": thresholds,
         }
 
     def health_report(self) -> dict[str, object]:
-        """记忆健康报告。"""
+        """Memory health report."""
         all_memories = self.store.list(include_archived=True)
         active_memories = [m for m in all_memories if m.status == MemoryStatus.ACTIVE]
-        strengths = [current_strength(m) for m in active_memories]
-        thresholds = update_dynamic_thresholds(strengths)
-
-        layer_counts: Counter[str] = Counter()
-        for m in active_memories:
-            layer_counts[resolve_layer(current_strength(m))] += 1
 
         status_counts: Counter[str] = Counter(m.status.value for m in all_memories)
         tag_freq: Counter[str] = Counter()
@@ -238,13 +216,20 @@ class CSMEngine:
                 if tag:
                     tag_freq[tag] += 1
 
+        # Strength distribution stats
+        strengths = [current_strength(m) for m in active_memories]
+        avg_strength = sum(strengths) / len(strengths) if strengths else 0.0
+        max_strength = max(strengths) if strengths else 0.0
+        min_strength = min(strengths) if strengths else 0.0
+
         return {
             "total": len(all_memories),
             "active": len(active_memories),
-            "layers": dict(layer_counts),
             "statuses": dict(status_counts),
             "common_tags": tag_freq.most_common(10),
-            "dynamic_thresholds": thresholds,
+            "avg_strength": round(avg_strength, 4),
+            "max_strength": round(max_strength, 4),
+            "min_strength": round(min_strength, 4),
         }
 
     def reindex_embeddings(self) -> dict[str, object]:
