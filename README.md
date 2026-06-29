@@ -4,8 +4,8 @@
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python">
   <img src="https://img.shields.io/badge/License-GPL%20v3-green" alt="License">
   <br>
-  <em>持久化记忆 · BGE 混合检索 · 非线性连续衰减 · 间隔强化 · DeepSeek 自动提取</em><br>
-  <em>Persistent memory · BGE hybrid retrieval · nonlinear continuous decay · spaced reinforcement · DeepSeek extraction</em>
+  <em>让本地 LLM Agent 在不同会话之间持续记住、检索和修正信息</em><br>
+  <em>Persistent, searchable, and correctable memory for local LLM agents</em>
 </p>
 
 **中文** | [English](#english)
@@ -16,16 +16,34 @@
 
 ### 这是什么
 
-BrainMemory 是为本地单用户 LLM Agent 设计的持久化记忆引擎。它让 Agent 跨会话记住用户偏好、项目约定、可复用流程和纠正历史。
+BrainMemory 是一个运行在本机的 LLM Agent 长期记忆系统。它位于 Agent 与模型之间：对话结束后提取值得长期保留的信息，在下一次回答前检索相关记忆，并根据记忆是否真正帮助了回答持续调整它。
+
+它解决的不是“保存全部聊天记录”，而是让 Agent 维护一组可以长期演化的事实，例如：
+
+- 用户是谁、喜欢怎样被称呼，以及稳定的回答偏好；
+- 某个项目使用的技术栈、命令、规范和已经做出的决定；
+- 可复用的操作流程与排障经验；
+- 对旧信息的纠正，例如依赖工具从 pnpm 改为 bun。
+
+数据保存在本地 SQLite 中。BrainMemory 可以作为独立 HTTP Sidecar 使用，也可以直接接入 pi Agent、OpenClaw 或 Hermes。它面向可信的本地单用户环境，不提供多租户用户隔离。
+
+### 工作方式
 
 ```text
-存储：SQLite + FTS5
-检索：BGE-large-zh-v1.5 向量 + BM25 关键词
-衰减：dR/dt = -d·(2-R)·R
-强化：即时激活 + 基于回忆难度的间隔稳定性学习
-仲裁：DeepSeek 自动决定 ADD / UPDATE / SUPERSEDE / ARCHIVE / DELETE
-反馈：used / ignored / corrected
+用户消息
+   ↓
+检索与当前问题相关的长期记忆
+   ↓
+以明确的 BrainMemory 来源标记注入 Agent
+   ↓
+Agent 回答
+   ↓
+判断哪些记忆被使用、忽略或纠正
+   ↓
+提取新事实、替换旧事实、更新记忆状态
 ```
+
+BrainMemory 将记忆正文、检索索引、强度、可信度和反馈记录分开管理。记忆会随时间降低可检索性；真正被使用的记忆会得到强化，错误或被替代的信息会降权或删除。
 
 ### 一分钟开始
 
@@ -41,7 +59,6 @@ python -m brainmemory.cli serve
 ```
 
 如果 `brainmemory` 命令不在 PATH 中，始终可以使用 `python -m brainmemory.cli`。
-
 
 ### 记忆模型
 
@@ -198,16 +215,34 @@ docs/                  API 与集成文档
 
 ### What is BrainMemory?
 
-BrainMemory is a persistent memory engine for local, single-user LLM agents. It lets an agent retain user preferences, project conventions, reusable procedures, and correction history across sessions.
+BrainMemory is a local long-term memory system for LLM agents. It sits between an agent and its model: after a conversation it extracts information worth retaining, before the next answer it retrieves relevant memories, and after the answer it learns whether those memories were actually useful.
+
+It is not intended to preserve every chat message. It maintains an evolving set of reusable facts, including:
+
+- who the user is, how they prefer to be addressed, and stable response preferences;
+- project technologies, commands, conventions, and decisions;
+- reusable procedures and troubleshooting knowledge;
+- corrections to obsolete facts, such as a project moving from pnpm to bun.
+
+All data is stored locally in SQLite. BrainMemory can run as an HTTP sidecar or integrate directly with pi Agent, OpenClaw, and Hermes. It targets a trusted local single-user environment rather than multi-tenant user isolation.
+
+### How it works
 
 ```text
-Storage:    SQLite + FTS5
-Retrieval:  BGE-large-zh-v1.5 vectors + BM25 keywords
-Decay:      dR/dt = -d·(2-R)·R
-Learning:   immediate activation + effort-sensitive spaced stability
-Arbitration: DeepSeek chooses ADD / UPDATE / SUPERSEDE / ARCHIVE / DELETE
-Feedback:   used / ignored / corrected
+User message
+    ↓
+Retrieve relevant long-term memories
+    ↓
+Inject them with explicit BrainMemory provenance
+    ↓
+Agent answer
+    ↓
+Observe which memories were used, ignored, or corrected
+    ↓
+Extract new facts, replace obsolete facts, and update memory state
 ```
+
+Memory content, retrieval indexes, strength, trust, and feedback evidence are managed separately. Memories become less retrievable over time; successful use reinforces them, while incorrect or superseded information is demoted or removed.
 
 ### Quick start
 
@@ -219,7 +254,6 @@ python -m brainmemory.cli serve
 ```
 
 The first run downloads `BAAI/bge-large-zh-v1.5` (about 1.3 GB). Set `BRAINMEMORY_EMBEDDING_MODEL` to a local model directory for offline use.
-
 
 
 ### Memory dynamics
